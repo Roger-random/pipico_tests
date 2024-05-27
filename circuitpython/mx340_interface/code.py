@@ -5,8 +5,9 @@ import microcontroller
 import asyncio
 import neopixel
 
-import countio
 import digitalio
+
+import busio
 
 # From https://learn.adafruit.com/adafruit-kb2040/circuitpython-pins-and-modules
 board_pins = []
@@ -42,28 +43,33 @@ async def blink_rgb(pin, brightness_level, on_time, off_time, pause_time):
             px.fill((0, 0, 0))
             await asyncio.sleep(pause_time)
 
-# Use countio to watch for digital signal activity
-async def count_drops(pin, sleep_period, label):
-    with countio.Counter(pin) as watched:
-        while True:
-            await asyncio.sleep(sleep_period)
-            print(label,watched.count)
-            watched.count = 0
+# A check to see if we're getting the data stream expected to be coming steadily from K13988 chip
+async def startup_check(uart):
+    while uart.in_waiting < 2:
+        await asyncio.sleep(0)
+    data = uart.read(2)
+    assert data is not None
+    if data == b'\x80\x40':
+        print("Startup check: 0x80 0x40 as expected")
+        return
+    elif data == b'\x40\x80':
+        print("Startup check: 0x40 0x80 might just be caused by tuning in at wrong time. Acceptable.")
+        return
+    elif data == b'\x80\x80':
+        print("Startup check: 0x80 and it appears 0x40 has already been turned off. Acceptable.")
+        return
+    else:
+        raise RuntimeError("Did not see byte sequence (0x80 0x40 or just 0x80) expected from K13988")
 
-# Toggle digital output at regular intervals
-async def digital_toggle(pin, on_time, off_time):
-    with digitalio.DigitalInOut(pin) as togglee:
-        togglee.switch_to_output(False)
-        while True:
-            await asyncio.sleep(off_time)
-            togglee.value = True
-            await asyncio.sleep(on_time)
-            togglee.value = False
+# UART communication with K13988 chip
+async def k13988(tx, rx, enable):
+    with digitalio.DigitalInOut(enable) as enable_pin, busio.UART(board.TX, board.RX, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=1, timeout=20) as uart:
+        enable_pin.switch_to_output(True)
+        await startup_check(uart)
 
 async def main():
     led_task = asyncio.create_task(blink_rgb(board.NEOPIXEL, 25, 0.05, 0.1, 1.0))
-    count_d1 = asyncio.create_task(count_drops(board.D1, 1.0, "D1"))
-    toggle_d2 = asyncio.create_task(digital_toggle(board.D2, 2.0, 3.0))
-    await asyncio.gather(led_task, count_d1, toggle_d2)
+    control_panel_task = asyncio.create_task(k13988(board.TX, board.RX, board.D2))
+    await asyncio.gather(led_task, control_panel_task)
 
 asyncio.run(main())
