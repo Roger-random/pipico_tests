@@ -46,10 +46,8 @@ async def blink_rgb(pin, brightness_level, on_time, off_time, pause_time):
 # Class that represents latest data heard from K13988
 class ReceivedData:
     def __init__(self):
-        self.last_report = 0x80
-        self.report_unchanged_count = 0
+        self.last_report = 0x0
         self.ack_count = 0
-        self.ignored0x40_count = 0
 
 # Data receive loop
 async def uart_receiver(uart, rx_data):
@@ -64,28 +62,75 @@ async def uart_receiver(uart, rx_data):
         if data == 0x20:
             rx_data.ack_count += 1
         elif data == 0x40:
-            rx_data.ignored0x40_count += 1
-        elif data == rx_data.last_report:
-            rx_data.report_unchanged_count += 1
-        else:
-            rx_data_print(rx_data)
+            # Ignore 0x40 as I have no idea what it means
+            pass
+        elif data != rx_data.last_report:
             rx_data.last_report = data
-            rx_data.report_unchanged_count = 0
+            print(f"New report 0x{data:x}")
+        else:
+            # Key matrix scan report unchanged, take no action
+            pass
 
-# Print ReceivedData values to console
-def rx_data_print(rx_data):
-    print(f"0x{rx_data.last_report:x} for {rx_data.report_unchanged_count} / {rx_data.ack_count} ACK / {rx_data.ignored0x40_count} 0x40 ignored")
-    rx_data.report_unchanged_count = 0
-    rx_data.ack_count = 0
-    rx_data.ignored0x40_count = 0
-
-# Periodically dump ReceivedData values
-async def rx_data_print_loop(rx_data):
+# Send data to K13988
+async def uart_sender(uart, rx_data, bytes):
+    assert uart is not None
+    assert bytes is not None
+    assert len(bytes) == 2
     assert rx_data is not None
 
-    while True:
-        await asyncio.sleep(1.0)
-        rx_data_print(rx_data)
+    sent = uart.write(bytes)
+    assert sent == 2
+
+    while rx_data.ack_count < 1:
+        await asyncio.sleep(0)
+
+    rx_data.ack_count -= 1
+
+# Initialize K13988
+async def initialize(uart, rx_data):
+    assert uart is not None
+    assert rx_data is not None
+
+    print("Starting K13988 initialization")
+
+    # Mimicing MX340 behavior of a slight pause
+    await asyncio.sleep(0.024)
+
+    # Values came from logic analyzer watching behavior of a running MX340
+    # This code sends the same bytes without understanding what they mean
+
+    # Initial set of bytes sent in rapid succession.
+    await uart_sender(uart, rx_data, b'\xFE\xDC')
+    await uart_sender(uart, rx_data, b'\x0E\xFD')
+    await uart_sender(uart, rx_data, b'\x0D\x3F')
+    await uart_sender(uart, rx_data, b'\x0C\xE1')
+    await uart_sender(uart, rx_data, b'\x07\xA1')
+    await uart_sender(uart, rx_data, b'\x03\x00')
+    await uart_sender(uart, rx_data, b'\x01\x00')
+    await uart_sender(uart, rx_data, b'\x0E\xFC')
+    await uart_sender(uart, rx_data, b'\x04\xD5')
+    await uart_sender(uart, rx_data, b'\x04\x85')
+    await uart_sender(uart, rx_data, b'\x04\x03')
+    await uart_sender(uart, rx_data, b'\x04\xC5')
+    await uart_sender(uart, rx_data, b'\x04\x34')
+
+    # Logic analyzer reported that, after above sequence, the key matrix report
+    # dropped from two bytes (0x80 0x40) to a single byte (0x80)
+
+    await asyncio.sleep(0.017) # Mimicking MX340 behavior of a slight pause
+
+    await uart_sender(uart, rx_data, b'\x04\x74')
+
+    await asyncio.sleep(0.02) # Mimicking MX340 behavior of a slight pause
+
+    await uart_sender(uart, rx_data, b'\x04\xF4')
+    await uart_sender(uart, rx_data, b'\x04\x44')
+    await uart_sender(uart, rx_data, b'\x04\x81')
+    await uart_sender(uart, rx_data, b'\x04\x04')
+
+    await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
+
+    print("Initialization sequence complete")
 
 # UART communication with K13988 chip
 async def k13988(tx, rx, enable):
@@ -94,8 +139,8 @@ async def k13988(tx, rx, enable):
     with digitalio.DigitalInOut(enable) as enable_pin, busio.UART(board.TX, board.RX, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=1, timeout=20) as uart:
         enable_pin.switch_to_output(True)
         receiver = asyncio.create_task(uart_receiver(uart, rx_data))
-        printer = asyncio.create_task(rx_data_print_loop(rx_data))
-        await asyncio.gather(receiver, printer)
+        initializer = asyncio.create_task(initialize(uart, rx_data))
+        await asyncio.gather(receiver, initializer)
 
 async def main():
     led_task = asyncio.create_task(blink_rgb(board.NEOPIXEL, 25, 0.05, 0.1, 1.0))
