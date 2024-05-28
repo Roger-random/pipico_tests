@@ -132,6 +132,18 @@ async def initialize(uart, rx_data):
 
     print("Initialization sequence complete")
 
+    await inuse_blinker(uart, rx_data)
+
+# Blink "In Use/Memory" LED
+async def inuse_blinker(uart, rx_data):
+    while True:
+        print("On")
+        await uart_sender(uart, rx_data, b'\x0E\xF9')
+        await asyncio.sleep(1)
+        print("Off")
+        await uart_sender(uart, rx_data, b'\x0E\xFD')
+        await asyncio.sleep(1)
+
 # UART communication with K13988 chip
 async def k13988(tx, rx, enable):
     rx_data = ReceivedData()
