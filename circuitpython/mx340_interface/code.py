@@ -1,47 +1,7 @@
-import time
 import board
-import microcontroller
-
 import asyncio
-import neopixel
-
 import digitalio
-
 import busio
-
-# From https://learn.adafruit.com/adafruit-kb2040/circuitpython-pins-and-modules
-board_pins = []
-for pin in dir(microcontroller.pin):
-    if isinstance(getattr(microcontroller.pin, pin), microcontroller.Pin):
-        pins = []
-        for alias in dir(board):
-            if getattr(board, alias) is getattr(microcontroller.pin, pin):
-                pins.append(f"board.{alias}")
-        # Add the original GPIO name, in parentheses.
-        if pins:
-            # Only include pins that are in board.
-            pins.append(f"({str(pin)})")
-            board_pins.append(" ".join(pins))
-
-for pins in sorted(board_pins):
-    print(pins)
-
-# asyncio smoke test with single NeoPixel LED
-async def blink_rgb(pin, brightness_level, on_time, off_time, pause_time):
-    with neopixel.NeoPixel(pin, 1) as px:
-        while True:
-            px.fill((brightness_level, 0, 0))
-            await asyncio.sleep(on_time)
-            px.fill((0, 0, 0))
-            await asyncio.sleep(off_time)
-            px.fill((0, brightness_level, 0))
-            await asyncio.sleep(on_time)
-            px.fill((0, 0, 0))
-            await asyncio.sleep(off_time)
-            px.fill((0, 0, brightness_level))
-            await asyncio.sleep(on_time)
-            px.fill((0, 0, 0))
-            await asyncio.sleep(pause_time)
 
 # Class that represents latest data heard from K13988
 class ReceivedData:
@@ -147,12 +107,14 @@ async def initialize(uart, rx_data):
 # Blink "In Use/Memory" LED
 async def inuse_blinker(uart, rx_data):
     while True:
-        print("On")
         await uart_sender(uart, rx_data, b'\x0E\xF9')
-        await asyncio.sleep(1)
-        print("Off")
+        await asyncio.sleep(0.1)
         await uart_sender(uart, rx_data, b'\x0E\xFD')
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.1)
+        await uart_sender(uart, rx_data, b'\x0E\xF9')
+        await asyncio.sleep(0.1)
+        await uart_sender(uart, rx_data, b'\x0E\xFD')
+        await asyncio.sleep(1.0)
 
 # UART communication with K13988 chip
 async def k13988(tx, rx, enable):
@@ -165,8 +127,7 @@ async def k13988(tx, rx, enable):
         await asyncio.gather(receiver, initializer)
 
 async def main():
-    led_task = asyncio.create_task(blink_rgb(board.NEOPIXEL, 25, 0.05, 0.1, 1.0))
     control_panel_task = asyncio.create_task(k13988(board.TX, board.RX, board.D2))
-    await asyncio.gather(led_task, control_panel_task)
+    await asyncio.gather(control_panel_task)
 
 asyncio.run(main())
