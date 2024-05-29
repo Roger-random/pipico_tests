@@ -71,6 +71,11 @@ async def uart_receiver(uart, rx_data):
             # Key matrix scan report unchanged, take no action
             pass
 
+# Wait for ACK
+async def wait_for_ack(rx_data):
+    while rx_data.ack_count < 1:
+        await asyncio.sleep(0)
+
 # Send data to K13988
 async def uart_sender(uart, rx_data, bytes):
     assert uart is not None
@@ -78,13 +83,18 @@ async def uart_sender(uart, rx_data, bytes):
     assert len(bytes) == 2
     assert rx_data is not None
 
-    sent = uart.write(bytes)
-    assert sent == 2
+    success = False
 
-    while rx_data.ack_count < 1:
-        await asyncio.sleep(0)
+    while not success:
+        sent = uart.write(bytes)
+        assert sent == 2
 
-    rx_data.ack_count -= 1
+        try:
+            await asyncio.wait_for(wait_for_ack(rx_data),0.05)
+            rx_data.ack_count -= 1
+            success = True
+        except:
+            print("Timed out waiting for ACK, retrying")
 
 # Initialize K13988
 async def initialize(uart, rx_data):
