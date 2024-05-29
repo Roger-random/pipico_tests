@@ -121,7 +121,11 @@ async def k13988(tx, rx, enable):
     rx_data = ReceivedData()
 
     with digitalio.DigitalInOut(enable) as enable_pin, busio.UART(board.TX, board.RX, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=1, timeout=20) as uart:
-        enable_pin.switch_to_output(True)
+        # Soft reset K13988 with disable + enable
+        enable_pin.switch_to_output(False)
+        await asyncio.sleep(0.5)
+        enable_pin.value = True
+
         receiver = asyncio.create_task(uart_receiver(uart, rx_data))
         initializer = asyncio.create_task(initialize(uart, rx_data))
         await asyncio.gather(receiver, initializer)
