@@ -71,13 +71,12 @@ async def initialize(uart, rx_data):
 
     # Initial set of bytes sent in rapid succession.
     await uart_sender(uart, rx_data, b'\xFE\xDC')
-    await uart_sender(uart, rx_data, b'\x0E\xFD')
+    await uart_sender(uart, rx_data, b'\x0E\xFD') # Turn off "In Use/Memory" and "WiFi" LEDs
     await uart_sender(uart, rx_data, b'\x0D\x3F')
     await uart_sender(uart, rx_data, b'\x0C\xE1')
     await uart_sender(uart, rx_data, b'\x07\xA1')
     await uart_sender(uart, rx_data, b'\x03\x00')
     await uart_sender(uart, rx_data, b'\x01\x00')
-    await uart_sender(uart, rx_data, b'\x0E\xFC')
     await uart_sender(uart, rx_data, b'\x04\xD5')
     await uart_sender(uart, rx_data, b'\x04\x85')
     await uart_sender(uart, rx_data, b'\x04\x03')
@@ -102,8 +101,6 @@ async def initialize(uart, rx_data):
 
     print("Initialization sequence complete")
 
-    await inuse_blinker(uart, rx_data)
-
 # Blink "In Use/Memory" LED
 async def inuse_blinker(uart, rx_data):
     while True:
@@ -122,12 +119,13 @@ async def k13988(tx, rx, enable):
         await asyncio.sleep(0.5)
         enable_pin.value = True
 
-        receiver = asyncio.create_task(uart_receiver(uart, rx_data))
-        initializer = asyncio.create_task(initialize(uart, rx_data))
-        await asyncio.gather(receiver, initializer)
+        await asyncio.gather(
+            uart_receiver(uart, rx_data),
+            initialize(uart, rx_data),
+            inuse_blinker(uart, rx_data)
+            )
 
 async def main():
-    control_panel_task = asyncio.create_task(k13988(board.TX, board.RX, board.D2))
-    await asyncio.gather(control_panel_task)
+    await asyncio.gather(k13988(board.TX, board.RX, board.D2))
 
 asyncio.run(main())
