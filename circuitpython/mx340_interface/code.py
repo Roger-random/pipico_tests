@@ -28,7 +28,7 @@ async def uart_receiver(uart, rx_data):
             pass
         elif data != rx_data.last_report:
             rx_data.last_report = data
-            print(f"New report 0x{data:x}")
+            print(f"New report 0x{data:X}")
         else:
             # Key matrix scan report unchanged, take no action
             pass
