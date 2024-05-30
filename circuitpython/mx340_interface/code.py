@@ -52,11 +52,11 @@ async def uart_sender(uart, rx_data, bytes):
         assert sent == 2 or len(bytes) == 196
 
         try:
-            await asyncio.wait_for(wait_for_ack(rx_data),0.05)
+            await asyncio.wait_for(wait_for_ack(rx_data),0.02)
             rx_data.ack_count -= 1
             success = True
         except:
-            print("Timed out waiting for ACK, retrying")
+            print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
 
 # Initialize K13988
 async def initialize(uart, rx_data):
