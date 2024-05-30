@@ -3,6 +3,8 @@ import asyncio
 import digitalio
 import busio
 
+framebuffer = bytearray(196)
+
 # Class that represents latest data heard from K13988
 class ReceivedData:
     def __init__(self):
@@ -40,14 +42,14 @@ async def wait_for_ack(rx_data):
 async def uart_sender(uart, rx_data, bytes):
     assert uart is not None
     assert bytes is not None
-    assert len(bytes) == 2
+    assert len(bytes) == 2 or len(bytes) == 196
     assert rx_data is not None
 
     success = False
 
     while not success:
         sent = uart.write(bytes)
-        assert sent == 2
+        assert sent == 2 or len(bytes) == 196
 
         try:
             await asyncio.wait_for(wait_for_ack(rx_data),0.05)
@@ -77,6 +79,7 @@ async def initialize(uart, rx_data):
     await uart_sender(uart, rx_data, b'\x07\xA1')
     await uart_sender(uart, rx_data, b'\x03\x00')
     await uart_sender(uart, rx_data, b'\x01\x00')
+    await uart_sender(uart, rx_data, b'\x0E\xFC') # Turn off "In Use/Memory" and "WiFi" LEDs... again?
     await uart_sender(uart, rx_data, b'\x04\xD5')
     await uart_sender(uart, rx_data, b'\x04\x85')
     await uart_sender(uart, rx_data, b'\x04\x03')
@@ -100,6 +103,20 @@ async def initialize(uart, rx_data):
     await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
 
     print("Initialization sequence complete")
+
+    await uart_sender(uart, rx_data, b'\x04\xF5') # Turn on LCD
+
+    for byte in range(196):
+        framebuffer[byte]=85
+
+    print("Sending first stripe")
+
+    await uart_sender(uart, rx_data, b'\x04\x4D')
+    await uart_sender(uart, rx_data, b'\x04\xC8')
+    await uart_sender(uart, rx_data, b'\x04\x30')
+    await uart_sender(uart, rx_data, b'\x06\xC4')
+
+    await uart_sender(uart, rx_data, framebuffer)
 
 # Blink "In Use/Memory" LED
 async def inuse_blinker(uart, rx_data):
