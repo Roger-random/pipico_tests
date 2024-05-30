@@ -107,16 +107,26 @@ async def initialize(uart, rx_data):
     await uart_sender(uart, rx_data, b'\x04\xF5') # Turn on LCD
 
     for byte in range(196):
-        framebuffer[byte]=85
+        framebuffer[byte]=byte
 
-    print("Sending first stripe")
+    await send_lcd_stripe(uart, rx_data, 0x8D, framebuffer) # Didn't see 0x8D in logic analyzer traces
+    await send_lcd_stripe(uart, rx_data, 0x4D, framebuffer)
+    await send_lcd_stripe(uart, rx_data, 0xCD, framebuffer)
+    await send_lcd_stripe(uart, rx_data, 0x2D, framebuffer)
+    await send_lcd_stripe(uart, rx_data, 0xAD, framebuffer)
+    # Saw 0xD in logic analyzer traces, but apparently off screen now. Don't understand what's different
 
-    await uart_sender(uart, rx_data, b'\x04\x4D')
+async def send_lcd_stripe(uart, rx_data, stripe_id, stripebuffer):
+    id_command = bytearray(2)
+    id_command[0] = 0x04
+    id_command[1] = stripe_id
+
+    await uart_sender(uart, rx_data, id_command)
     await uart_sender(uart, rx_data, b'\x04\xC8')
     await uart_sender(uart, rx_data, b'\x04\x30')
     await uart_sender(uart, rx_data, b'\x06\xC4')
 
-    await uart_sender(uart, rx_data, framebuffer)
+    await uart_sender(uart, rx_data, stripebuffer)
 
 # Blink "In Use/Memory" LED
 async def inuse_blinker(uart, rx_data):
@@ -130,7 +140,7 @@ async def inuse_blinker(uart, rx_data):
 async def k13988(tx, rx, enable):
     rx_data = ReceivedData()
 
-    with digitalio.DigitalInOut(enable) as enable_pin, busio.UART(board.TX, board.RX, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=1, timeout=20) as uart:
+    with digitalio.DigitalInOut(enable) as enable_pin, busio.UART(board.TX, board.RX, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20) as uart:
         # Soft reset K13988 with disable + enable
         enable_pin.switch_to_output(False)
         await asyncio.sleep(0.5)
