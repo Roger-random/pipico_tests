@@ -108,13 +108,9 @@ async def initialize(uart, rx_data):
 async def inuse_blinker(uart, rx_data):
     while True:
         await uart_sender(uart, rx_data, b'\x0E\xF9')
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(1)
         await uart_sender(uart, rx_data, b'\x0E\xFD')
-        await asyncio.sleep(0.1)
-        await uart_sender(uart, rx_data, b'\x0E\xF9')
-        await asyncio.sleep(0.1)
-        await uart_sender(uart, rx_data, b'\x0E\xFD')
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1)
 
 # UART communication with K13988 chip
 async def k13988(tx, rx, enable):
