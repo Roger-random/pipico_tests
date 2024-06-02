@@ -102,6 +102,10 @@ async def initialize(uart, rx_data):
 
     await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
 
+    await uart_sender(uart, rx_data, b'\x04\x42') # This command moved frame buffer up by 2 pixels so 0x4D starts at 0,0
+
+    await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
+
     print("Initialization sequence complete")
 
     await uart_sender(uart, rx_data, b'\x04\xF5') # Turn on LCD
@@ -109,12 +113,11 @@ async def initialize(uart, rx_data):
     for byte in range(196):
         framebuffer[byte]=byte
 
-    await send_lcd_stripe(uart, rx_data, 0x8D, framebuffer) # Didn't see 0x8D in logic analyzer traces
     await send_lcd_stripe(uart, rx_data, 0x4D, framebuffer)
     await send_lcd_stripe(uart, rx_data, 0xCD, framebuffer)
     await send_lcd_stripe(uart, rx_data, 0x2D, framebuffer)
     await send_lcd_stripe(uart, rx_data, 0xAD, framebuffer)
-    # Saw 0xD in logic analyzer traces, but apparently off screen now. Don't understand what's different
+    await send_lcd_stripe(uart, rx_data, 0x6D, framebuffer)
 
 async def send_lcd_stripe(uart, rx_data, stripe_id, stripebuffer):
     id_command = bytearray(2)
