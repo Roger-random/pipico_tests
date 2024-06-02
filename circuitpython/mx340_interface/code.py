@@ -55,7 +55,7 @@ async def uart_sender(uart, rx_data, bytes):
             await asyncio.wait_for(wait_for_ack(rx_data),0.02)
             rx_data.ack_count -= 1
             success = True
-        except:
+        except asyncio.TimeoutError:
             print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
 
 # Initialize K13988
