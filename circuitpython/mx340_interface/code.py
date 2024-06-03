@@ -69,6 +69,34 @@ framebuffer.format = MVMSBFormat()
 # identified with the corresponding hexadecimal value
 stripe_id_lookup = [b'\x04\x4D', b'\x04\xCD', b'\x04\x2D', b'\x04\xAD', b'\x04\x6D']
 
+# Initialization sequence for NEC K13988 chip
+# Values came from logic analyzer watching behavior of a running MX340
+# This code sends the same bytes without understanding what they all mean
+k13988_init = [
+    b'\xFE\xDC',
+    b'\x0E\xFD', # Turn off "In Use/Memory" and "WiFi" LEDs
+    b'\x0D\x3F',
+    b'\x0C\xE1',
+    b'\x07\xA1',
+    b'\x03\x00',
+    b'\x01\x00',
+    b'\x0E\xFC', # Turn off "In Use/Memory" and "WiFi" LEDs... again?
+    b'\x04\xD5',
+    b'\x04\x85',
+    b'\x04\x03',
+    b'\x04\xC5',
+    b'\x04\x34',
+    # Logic analyzer reported that, after above sequence, the key matrix report
+    # dropped from two bytes (0x80 0x40) to a single byte (0x80)
+    b'\x04\x74',
+    b'\x04\xF4',
+    b'\x04\x44',
+    b'\x04\x81',
+    b'\x04\x04',
+    b'\x04\x42', # This command moved frame buffer up by 2 pixels so 0x4D starts at 0,0
+    b'\x04\xF5'  # Turn on LCD
+]
+
 # Class that represents latest data heard from K13988
 class ReceivedData:
     def __init__(self):
@@ -129,40 +157,15 @@ async def initialize(uart, rx_data):
 
     print("Starting K13988 initialization")
 
-    # Mimicing MX340 behavior of a slight pause
+    # Mimicing MX340 behavior of a slight pause. Without it the first transmission
+    # does not receive 0x20 ACK and would need to be resent.
+    # TODO: Maybe link it to the first 0x80 0x40 seen by receiver?
     await asyncio.sleep(0.024)
 
-    # Values came from logic analyzer watching behavior of a running MX340
-    # This code sends the same bytes without understanding what they mean
-
-    # Initial set of bytes sent in rapid succession.
-    await uart_sender(uart, rx_data, b'\xFE\xDC')
-    await uart_sender(uart, rx_data, b'\x0E\xFD') # Turn off "In Use/Memory" and "WiFi" LEDs
-    await uart_sender(uart, rx_data, b'\x0D\x3F')
-    await uart_sender(uart, rx_data, b'\x0C\xE1')
-    await uart_sender(uart, rx_data, b'\x07\xA1')
-    await uart_sender(uart, rx_data, b'\x03\x00')
-    await uart_sender(uart, rx_data, b'\x01\x00')
-    await uart_sender(uart, rx_data, b'\x0E\xFC') # Turn off "In Use/Memory" and "WiFi" LEDs... again?
-    await uart_sender(uart, rx_data, b'\x04\xD5')
-    await uart_sender(uart, rx_data, b'\x04\x85')
-    await uart_sender(uart, rx_data, b'\x04\x03')
-    await uart_sender(uart, rx_data, b'\x04\xC5')
-    await uart_sender(uart, rx_data, b'\x04\x34')
-
-    # Logic analyzer reported that, after above sequence, the key matrix report
-    # dropped from two bytes (0x80 0x40) to a single byte (0x80)
-
-    await uart_sender(uart, rx_data, b'\x04\x74')
-    await uart_sender(uart, rx_data, b'\x04\xF4')
-    await uart_sender(uart, rx_data, b'\x04\x44')
-    await uart_sender(uart, rx_data, b'\x04\x81')
-    await uart_sender(uart, rx_data, b'\x04\x04')
-    await uart_sender(uart, rx_data, b'\x04\x42') # This command moved frame buffer up by 2 pixels so 0x4D starts at 0,0
+    for init_command in k13988_init:
+        await uart_sender(uart, rx_data, init_command)
 
     print("Initialization sequence complete")
-
-    await uart_sender(uart, rx_data, b'\x04\xF5') # Turn on LCD
 
     # Clear frame buffer
     framebuffer.fill(0)
