@@ -7,7 +7,7 @@ import adafruit_framebuf
 
 # Copied MVLSBFormat from
 # https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
-# Then modified from LSB to MSB
+# Then modified from least-significant bit nearest top of screen to most-significant-bit up top
 class MVMSBFormat:
     """MVMSBFormat"""
 
@@ -16,16 +16,17 @@ class MVMSBFormat:
         """Set a given pixel to a color."""
         index = (y >> 3) * framebuf.stride + x
         offset = y & 0x07
-        framebuf.buf[index] = (framebuf.buf[index] & ~(0x01 << offset)) | (
-            (color != 0) << offset
-        )
+        pixel_byte = 0x00
+        if color != 0:
+            pixel_byte = 0x80 >> offset
+        framebuf.buf[index] = (framebuf.buf[index] & ~(0x80 >> offset)) | pixel_byte
 
     @staticmethod
     def get_pixel(framebuf, x, y):
         """Get the color of a given pixel"""
         index = (y >> 3) * framebuf.stride + x
         offset = y & 0x07
-        return (framebuf.buf[index] >> offset) & 0x01
+        return (framebuf.buf[index] << offset) & 0x80
 
     @staticmethod
     def fill(framebuf, color):
@@ -46,9 +47,12 @@ class MVMSBFormat:
             index = (y >> 3) * framebuf.stride + x
             offset = y & 0x07
             for w_w in range(width):
+                pixel_byte = 0x00
+                if color != 0:
+                    pixel_byte = 0x80 >> offset
                 framebuf.buf[index + w_w] = (
-                    framebuf.buf[index + w_w] & ~(0x01 << offset)
-                ) | ((color != 0) << offset)
+                    framebuf.buf[index + w_w] & ~(0x80 >> offset)
+                ) | pixel_byte
             y += 1
             height -= 1
 
@@ -177,7 +181,6 @@ async def initialize(uart, rx_data):
     framebuffer.line(0, 0, 195, 33, 1)
     framebuffer.circle(20, 20, 10, 1)
     framebuffer.rect(120, 5, 50, 10, 1, fill=True)
-    # RuntimeError: pystack exhausted
     framebuffer.text("Hello FrameBuffer",5,5,1,font_name="lib/font5x8.bin")
 
     # Send to screen
