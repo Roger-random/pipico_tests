@@ -5,6 +5,53 @@ import busio
 
 import adafruit_framebuf
 
+# Copied MVLSBFormat from
+# https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
+# Then modified from LSB to MSB
+class MVMSBFormat:
+    """MVMSBFormat"""
+
+    @staticmethod
+    def set_pixel(framebuf, x, y, color):
+        """Set a given pixel to a color."""
+        index = (y >> 3) * framebuf.stride + x
+        offset = y & 0x07
+        framebuf.buf[index] = (framebuf.buf[index] & ~(0x01 << offset)) | (
+            (color != 0) << offset
+        )
+
+    @staticmethod
+    def get_pixel(framebuf, x, y):
+        """Get the color of a given pixel"""
+        index = (y >> 3) * framebuf.stride + x
+        offset = y & 0x07
+        return (framebuf.buf[index] >> offset) & 0x01
+
+    @staticmethod
+    def fill(framebuf, color):
+        """completely fill/clear the buffer with a color"""
+        if color:
+            fill = 0xFF
+        else:
+            fill = 0x00
+        for i in range(len(framebuf.buf)):  # pylint: disable=consider-using-enumerate
+            framebuf.buf[i] = fill
+
+    @staticmethod
+    def fill_rect(framebuf, x, y, width, height, color):
+        """Draw a rectangle at the given location, size and color. The ``fill_rect`` method draws
+        both the outline and interior."""
+        # pylint: disable=too-many-arguments
+        while height > 0:
+            index = (y >> 3) * framebuf.stride + x
+            offset = y & 0x07
+            for w_w in range(width):
+                framebuf.buf[index + w_w] = (
+                    framebuf.buf[index + w_w] & ~(0x01 << offset)
+                ) | ((color != 0) << offset)
+            y += 1
+            height -= 1
+
 # Raw frame buffer byte array
 framebuffer_bytearray = bytearray(196*5)
 
@@ -12,6 +59,7 @@ framebuffer_bytearray = bytearray(196*5)
 framebuffer = adafruit_framebuf.FrameBuffer(
     framebuffer_bytearray, 196, 40, buf_format=adafruit_framebuf.MVLSB
 )
+framebuffer.format = MVMSBFormat()
 
 # Frame buffer is made of 5 stripes. During data transmission each stripe is
 # identified with the corresponding hexadecimal value
