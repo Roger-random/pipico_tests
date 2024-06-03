@@ -153,22 +153,12 @@ async def initialize(uart, rx_data):
     # Logic analyzer reported that, after above sequence, the key matrix report
     # dropped from two bytes (0x80 0x40) to a single byte (0x80)
 
-    await asyncio.sleep(0.017) # Mimicking MX340 behavior of a slight pause
-
     await uart_sender(uart, rx_data, b'\x04\x74')
-
-    await asyncio.sleep(0.02) # Mimicking MX340 behavior of a slight pause
-
     await uart_sender(uart, rx_data, b'\x04\xF4')
     await uart_sender(uart, rx_data, b'\x04\x44')
     await uart_sender(uart, rx_data, b'\x04\x81')
     await uart_sender(uart, rx_data, b'\x04\x04')
-
-    await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
-
     await uart_sender(uart, rx_data, b'\x04\x42') # This command moved frame buffer up by 2 pixels so 0x4D starts at 0,0
-
-    await asyncio.sleep(0.1) # Mimicking MX340 behavior of a slight pause
 
     print("Initialization sequence complete")
 
