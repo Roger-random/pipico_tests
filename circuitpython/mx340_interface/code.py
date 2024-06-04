@@ -4,6 +4,7 @@ import digitalio
 import busio
 
 import adafruit_framebuf
+import framebufferio
 
 # Copied MVLSBFormat from
 # https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
@@ -178,6 +179,9 @@ async def initialize(uart, rx_data):
 
     # Send to screen
     await send_lcd_frame(uart, rx_data)
+
+    # TypeError: 'FrameBuffer' object does not support 'protocol_framebuffer'
+    # display = framebufferio.FramebufferDisplay(framebuffer)
 
 async def send_lcd_frame(uart, rx_data):
     for stripe in range(5):
