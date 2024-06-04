@@ -172,20 +172,17 @@ async def initialize(uart, rx_data):
 
     print("Initialization sequence complete")
 
-    # Clear frame buffer
-    framebuffer.fill(0)
-
-    # Draw some stuff
-    framebuffer.line(0, 0, 195, 33, 1)
-    framebuffer.circle(20, 20, 10, 1)
-    framebuffer.rect(120, 5, 50, 10, 1, fill=True)
-    framebuffer.text("Hello FrameBuffer",5,5,1,font_name="lib/font5x8.bin")
-
-    # Send to screen
-    await send_lcd_frame(uart, rx_data)
-
     # TypeError: 'FrameBuffer' object does not support 'protocol_framebuffer'
     # display = framebufferio.FramebufferDisplay(framebuffer)
+
+    positions = [(50,4),(100,4),(100,16),(50,16)]
+
+    while True:
+        for pos in positions:
+            framebuffer.fill(1)
+            framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
+            await send_lcd_frame(uart, rx_data)
+            await asyncio.sleep(0.2)
 
 async def send_lcd_frame(uart, rx_data):
     for stripe in range(5):
