@@ -105,6 +105,7 @@ k13988_init = [
 # Class that represents latest data heard from K13988
 class ReceivedData:
     def __init__(self):
+        self.startup = True
         self.last_report = 0x0
         self.ack_count = 0
 
@@ -117,6 +118,9 @@ async def uart_receiver(uart, rx_data):
         while uart.in_waiting < 1:
             await asyncio.sleep(0)
         data = uart.read(1)[0]
+
+        # First successful read complete, exit startup mode
+        rx_data.startup = False
 
         if data == 0x20:
             rx_data.ack_count += 1
@@ -162,10 +166,8 @@ async def initialize(uart, rx_data):
 
     print("Starting K13988 initialization")
 
-    # Mimicing MX340 behavior of a slight pause. Without it the first transmission
-    # does not receive 0x20 ACK and would need to be resent.
-    # TODO: Maybe link it to the first 0x80 0x40 seen by receiver?
-    await asyncio.sleep(0.024)
+    while rx_data.startup:
+        await asyncio.sleep(0)
 
     for init_command in k13988_init:
         await uart_sender(uart, rx_data, init_command)
