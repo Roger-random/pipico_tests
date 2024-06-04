@@ -61,10 +61,14 @@ class MVMSBFormat:
 framebuffer_bytearray = bytearray(196*5)
 
 # FrameBuffer class for drawing on the byte array
-framebuffer = adafruit_framebuf.FrameBuffer(
-    framebuffer_bytearray, 196, 40, buf_format=adafruit_framebuf.MVLSB
-)
-framebuffer.format = MVMSBFormat()
+class K13988Display(adafruit_framebuf.FrameBuffer):
+    def __init__(self, buffer_bytearray):
+        super().__init__(buffer_bytearray, 196, 34)
+
+        # Change format over to our custom format.
+        self.format = MVMSBFormat()
+
+framebuffer = K13988Display(framebuffer_bytearray)
 
 # Frame buffer is made of 5 stripes. During data transmission each stripe is
 # identified with the corresponding hexadecimal value
