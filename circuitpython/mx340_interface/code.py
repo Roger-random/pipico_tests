@@ -167,6 +167,7 @@ class K13988:
             await self.uart_sender(init_command)
 
         print("Initialization sequence complete")
+        self.initialization_complete = True
 
         positions = [(50,4),(100,4),(100,16),(50,16)]
 
@@ -194,6 +195,9 @@ class K13988:
 
     # Blink "In Use/Memory" LED
     async def inuse_blinker(self):
+        while not self.initialization_complete:
+            await asyncio.sleep(0)
+
         while True:
             await self.uart_sender(b'\x0E\xF9')
             await asyncio.sleep(1)
