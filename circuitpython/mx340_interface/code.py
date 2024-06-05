@@ -204,7 +204,13 @@ class K13988:
         while True:
             async with self.transmit_lock:
                 await self.uart_sender(b'\x0E\xF9')
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
+            async with self.transmit_lock:
+                await self.uart_sender(b'\x0E\xFD')
+            await asyncio.sleep(0.1)
+            async with self.transmit_lock:
+                await self.uart_sender(b'\x0E\xF9')
+            await asyncio.sleep(0.1)
             async with self.transmit_lock:
                 await self.uart_sender(b'\x0E\xFD')
             await asyncio.sleep(1)
