@@ -4,7 +4,6 @@ import digitalio
 import busio
 
 import adafruit_framebuf
-import framebufferio
 
 # Copied MVLSBFormat from
 # https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
@@ -173,9 +172,6 @@ async def initialize(uart, rx_data):
         await uart_sender(uart, rx_data, init_command)
 
     print("Initialization sequence complete")
-
-    # TypeError: 'FrameBuffer' object does not support 'protocol_framebuffer'
-    # display = framebufferio.FramebufferDisplay(framebuffer)
 
     positions = [(50,4),(100,4),(100,16),(50,16)]
 
