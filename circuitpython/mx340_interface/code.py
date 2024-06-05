@@ -109,6 +109,7 @@ class K13988:
         self.ack_count = 0
         self.enable = digitalio.DigitalInOut(enable_pin)
         self.uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
+        self.transmit_lock = asyncio.Lock()
 
     # Data receive task
     async def uart_receiver(self):
@@ -163,8 +164,9 @@ class K13988:
         while self.in_startup:
             await asyncio.sleep(0)
 
-        for init_command in self.k13988_init:
-            await self.uart_sender(init_command)
+        async with self.transmit_lock:
+            for init_command in self.k13988_init:
+                await self.uart_sender(init_command)
 
         print("Initialization sequence complete")
         self.initialization_complete = True
@@ -179,8 +181,9 @@ class K13988:
                 await asyncio.sleep(0.2)
 
     async def send_lcd_frame(self):
-        for stripe in range(5):
-            await self.send_lcd_stripe(stripe)
+        async with self.transmit_lock:
+            for stripe in range(5):
+                await self.send_lcd_stripe(stripe)
 
     async def send_lcd_stripe(self, stripe_num: int):
         stripe_slice_start = stripe_num*196
@@ -199,9 +202,11 @@ class K13988:
             await asyncio.sleep(0)
 
         while True:
-            await self.uart_sender(b'\x0E\xF9')
+            async with self.transmit_lock:
+                await self.uart_sender(b'\x0E\xF9')
             await asyncio.sleep(1)
-            await self.uart_sender(b'\x0E\xFD')
+            async with self.transmit_lock:
+                await self.uart_sender(b'\x0E\xFD')
             await asyncio.sleep(1)
 
     async def run(self):
