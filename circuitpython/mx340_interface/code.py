@@ -168,16 +168,8 @@ class K13988:
                 await self.uart_sender(init_command)
 
         print("Initialization sequence complete")
+        # Set initialization complete event
         self.initialization_complete.set()
-
-        positions = [(50,4),(100,4),(100,16),(50,16)]
-
-        while True:
-            for pos in positions:
-                framebuffer.fill(1)
-                framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
-                await self.send_lcd_frame()
-                await asyncio.sleep(0.2)
 
     async def send_lcd_frame(self):
         async with self.transmit_lock:
@@ -216,13 +208,26 @@ class K13988:
     async def run(self):
         # Soft reset K13988 with disable + enable
         self.enable.switch_to_output(False)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.25)
         self.enable.value = True
 
-        await asyncio.gather(
-            self.uart_receiver(),
-            self.inuse_blinker(),
-            self.initialize())
+        try:
+            receiver_task = asyncio.create_task(self.uart_receiver())
+            await self.initialize()
+            blink_task = asyncio.create_task(self.inuse_blinker())
+
+            positions = [(50,4),(100,4),(100,16),(50,16)]
+
+            while True:
+                for pos in positions:
+                    framebuffer.fill(1)
+                    framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
+                    await self.send_lcd_frame()
+                    await asyncio.sleep(0.2)
+
+        finally:
+            blink_task.cancel()
+            receiver_task.cancel()
 
 async def main():
     k13988 = K13988(board.TX, board.RX, board.D2)
