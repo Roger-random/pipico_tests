@@ -103,8 +103,8 @@ class K13988:
     ]
 
     def __init__(self, tx_pin: microcontroller.Pin, rx_pin: microcontroller.Pin, enable_pin: microcontroller.Pin):
-        self.in_startup = True
-        self.initialization_complete = False
+        self.transmit_startup = asyncio.Event()
+        self.initialization_complete = asyncio.Event()
         self.last_report = 0x00
         self.ack_count = 0
         self.enable = digitalio.DigitalInOut(enable_pin)
@@ -119,7 +119,7 @@ class K13988:
             data = self.uart.read(1)[0]
 
             # First successful read complete, exit startup mode
-            self.in_startup = False
+            self.transmit_startup.set()
 
             if data == 0x20:
                 self.ack_count += 1
@@ -161,15 +161,14 @@ class K13988:
         print("Starting K13988 initialization")
 
         # Wait for first byte from K13988 before transmitting initialization
-        while self.in_startup:
-            await asyncio.sleep(0)
+        await self.transmit_startup.wait()
 
         async with self.transmit_lock:
             for init_command in self.k13988_init:
                 await self.uart_sender(init_command)
 
         print("Initialization sequence complete")
-        self.initialization_complete = True
+        self.initialization_complete.set()
 
         positions = [(50,4),(100,4),(100,16),(50,16)]
 
@@ -198,8 +197,7 @@ class K13988:
 
     # Blink "In Use/Memory" LED
     async def inuse_blinker(self):
-        while not self.initialization_complete:
-            await asyncio.sleep(0)
+        await self.initialization_complete.wait()
 
         while True:
             async with self.transmit_lock:
