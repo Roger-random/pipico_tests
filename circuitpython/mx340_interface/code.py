@@ -73,6 +73,7 @@ class K13988:
 
         # Hardware IO
         self._enable = digitalio.DigitalInOut(enable_pin)
+        self._enable.switch_to_output(False)
         self._uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
 
         # Raw frame buffer byte array
@@ -218,23 +219,26 @@ class K13988:
             self._led_state[1] = self._led_state[1] & 0b11111101
         await self._send_led_state()
 
-    # Get K13988 up and running then execute caller coroutine
-    # This seems like a great candidate to implement as a context manager
-    # but CircuitPython seems to lack contextlib for @contextmanager
-    async def run(self, coroutine):
+    # Asynchronous context manager entry to set up K13988 communications
+    async def __aenter__(self):
         # Soft reset K13988 with disable + enable
-        self._enable.switch_to_output(False)
+        self._enable.value = False
         await asyncio.sleep(0.25)
         self._enable.value = True
 
-        try:
-            receiver_task = asyncio.create_task(self._uart_receiver())
-            await self._initialize_k13988()
-            result = await coroutine
-        finally:
-            receiver_task.cancel()
+        # Start listener for K13988 data
+        self.receiver_task = asyncio.create_task(self._uart_receiver())
 
-        return result
+        # Send initialization sequence
+        await self._initialize_k13988()
+
+        # We are all set up and ready for application code
+        return self
+
+    # Asynchronous context manager exit to clean up K13988 communications
+    async def __aexit__(self, exc_type, exc, tb):
+        self._enable.value = False
+        self.receiver_task.cancel()
 
 # Blink "In Use/Memory" LED
 async def inuse_blinker(k13988):
@@ -248,8 +252,10 @@ async def inuse_blinker(k13988):
         await k13988.in_use_led(False)
         await asyncio.sleep(1)
 
-async def bouncy_text(k13988, framebuffer):
+# Test FrameBuffer support by drawing text in various locations
+async def bouncy_text(k13988):
     positions = [(50,4),(100,4),(100,16),(50,16)]
+    framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
 
     while True:
         for pos in positions:
@@ -258,13 +264,8 @@ async def bouncy_text(k13988, framebuffer):
             await k13988.refresh()
             await asyncio.sleep(0.2)
 
-async def test_code(k13988, framebuffer):
-    return await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988, framebuffer))
-
 async def main():
-    k13988 = K13988(board.TX, board.RX, board.D2)
-    framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
-
-    await k13988.run(test_code(k13988, framebuffer))
+    async with K13988(board.TX, board.RX, board.D2) as k13988:
+        await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988))
 
 asyncio.run(main())
