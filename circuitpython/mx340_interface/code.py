@@ -65,14 +65,77 @@ class K13988FrameBufferWrapper(adafruit_framebuf.FrameBuffer):
         self.format = MVMSBFormat()
 
 class K13988:
-    # Frame buffer is made of 5 stripes. During data transmission each stripe is
-    # identified with the corresponding hexadecimal value
-    stripe_id_lookup = [b'\x04\x4D', b'\x04\xCD', b'\x04\x2D', b'\x04\xAD', b'\x04\x6D']
+    def __init__(self, tx_pin: microcontroller.Pin, rx_pin: microcontroller.Pin, enable_pin: microcontroller.Pin):
+        # Task synchronization
+        self._transmit_lock = asyncio.Lock()
+        self._transmit_startup = asyncio.Event()
+        self._initialization_complete = asyncio.Event()
+
+        # Hardware IO
+        self._enable = digitalio.DigitalInOut(enable_pin)
+        self._uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
+
+        # Raw frame buffer byte array
+        self._framebuffer_bytearray = bytearray(196*5)
+
+        # Internal state
+        self._last_report = 0x00
+        self._ack_count = 0
+        self._led_state = bytearray(b'\x0E\xFD')
+
+    # Get reference to raw frame buffer bytearray
+    def get_frame_buffer_bytearray(self):
+        return self._framebuffer_bytearray
+
+    # Data receive task
+    async def _uart_receiver(self):
+        while True:
+            while self._uart.in_waiting < 1:
+                await asyncio.sleep(0)
+            data = self._uart.read(1)[0]
+
+            # First successful read complete, exit startup mode
+            self._transmit_startup.set()
+
+            if data == 0x20:
+                self._ack_count += 1
+            elif data == 0x40:
+                # Ignore 0x40 as I have no idea what it means
+                pass
+            elif data != self._last_report:
+                self._last_report = data
+                print(f"New report 0x{data:X}")
+            else:
+                # Key matrix scan report unchanged, take no action
+                pass
+
+    # Wait for ACK
+    async def _wait_for_ack(self):
+        while self._ack_count < 1:
+            await asyncio.sleep(0)
+
+    # Send data to K13988
+    async def _uart_sender(self, bytes):
+        assert bytes is not None
+        assert len(bytes) == 2 or len(bytes) == 196
+
+        success = False
+
+        while not success:
+            sent = self._uart.write(bytes)
+            assert sent == 2 or len(bytes) == 196
+
+            try:
+                await asyncio.wait_for(self._wait_for_ack(),0.02)
+                self._ack_count -= 1
+                success = True
+            except asyncio.TimeoutError:
+                print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
 
     # Initialization sequence for NEC K13988 chip
     # Values came from logic analyzer watching behavior of a running MX340
     # This code sends the same bytes without understanding what they all mean
-    k13988_init = [
+    _k13988_init = [
         b'\xFE\xDC',
         b'\x0E\xFD', # Turn off "In Use/Memory" and "WiFi" LEDs
         b'\x0D\x3F',
@@ -97,132 +160,74 @@ class K13988:
         b'\x04\xF5'  # Turn on LCD
     ]
 
-    def __init__(self, tx_pin: microcontroller.Pin, rx_pin: microcontroller.Pin, enable_pin: microcontroller.Pin):
-        # Task synchronization
-        self.transmit_lock = asyncio.Lock()
-        self.transmit_startup = asyncio.Event()
-        self.initialization_complete = asyncio.Event()
-
-        # Hardware IO
-        self.enable = digitalio.DigitalInOut(enable_pin)
-        self.uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
-
-        # Raw frame buffer byte array
-        self.framebuffer_bytearray = bytearray(196*5)
-
-        # Internal state
-        self.last_report = 0x00
-        self.ack_count = 0
-        self.led_state = bytearray(b'\x0E\xFD')
-
-    # Data receive task
-    async def uart_receiver(self):
-        while True:
-            while self.uart.in_waiting < 1:
-                await asyncio.sleep(0)
-            data = self.uart.read(1)[0]
-
-            # First successful read complete, exit startup mode
-            self.transmit_startup.set()
-
-            if data == 0x20:
-                self.ack_count += 1
-            elif data == 0x40:
-                # Ignore 0x40 as I have no idea what it means
-                pass
-            elif data != self.last_report:
-                self.last_report = data
-                print(f"New report 0x{data:X}")
-            else:
-                # Key matrix scan report unchanged, take no action
-                pass
-
-    # Wait for ACK
-    async def wait_for_ack(self):
-        while self.ack_count < 1:
-            await asyncio.sleep(0)
-
-    # Send data to K13988
-    async def uart_sender(self, bytes):
-        assert bytes is not None
-        assert len(bytes) == 2 or len(bytes) == 196
-
-        success = False
-
-        while not success:
-            sent = self.uart.write(bytes)
-            assert sent == 2 or len(bytes) == 196
-
-            try:
-                await asyncio.wait_for(self.wait_for_ack(),0.02)
-                self.ack_count -= 1
-                success = True
-            except asyncio.TimeoutError:
-                print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
-
     # Initialize K13988
-    async def initialize(self):
+    async def _initialize_k13988(self):
         print("Starting K13988 initialization")
 
         # Wait for first byte from K13988 before transmitting initialization
-        await self.transmit_startup.wait()
+        await self._transmit_startup.wait()
 
-        async with self.transmit_lock:
-            for init_command in self.k13988_init:
-                await self.uart_sender(init_command)
+        async with self._transmit_lock:
+            for init_command in self._k13988_init:
+                await self._uart_sender(init_command)
 
         print("Initialization sequence complete")
         # Set initialization complete event
-        self.initialization_complete.set()
+        self._initialization_complete.set()
 
     # Following precedence of RGBMatrix, method to send frame buffer to screen
     async def refresh(self):
-        async with self.transmit_lock:
+        async with self._transmit_lock:
             for stripe in range(5):
-                await self.send_lcd_stripe(stripe)
+                await self._send_lcd_stripe(stripe)
 
-    async def send_lcd_stripe(self, stripe_num: int):
+    # Frame buffer is made of 5 stripes. During data transmission each stripe is
+    # identified with the corresponding hexadecimal value
+    _stripe_id_lookup = [b'\x04\x4D', b'\x04\xCD', b'\x04\x2D', b'\x04\xAD', b'\x04\x6D']
+
+    # Send to LCD one horizontal stripes of 8 vertical pixels.
+    async def _send_lcd_stripe(self, stripe_num: int):
         stripe_slice_start = stripe_num*196
         stripe_slice_end = stripe_slice_start+196
 
-        await self.uart_sender(self.stripe_id_lookup[stripe_num])
-        await self.uart_sender(b'\x04\xC8')
-        await self.uart_sender(b'\x04\x30')
-        await self.uart_sender(b'\x06\xC4')
+        await self._uart_sender(self._stripe_id_lookup[stripe_num])
+        await self._uart_sender(b'\x04\xC8')
+        await self._uart_sender(b'\x04\x30')
+        await self._uart_sender(b'\x06\xC4')
 
-        await self.uart_sender(self.framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
+        await self._uart_sender(self._framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
 
     # Transmit LED sate to K13988
-    async def send_led_state(self):
-        async with self.transmit_lock:
-            await self.uart_sender(self.led_state)
+    async def _send_led_state(self):
+        async with self._transmit_lock:
+            await self._uart_sender(self._led_state)
 
     # Update bit flag corresponding to In Use/Memory LED based on parameter
     async def in_use_led(self, newState):
         if newState:
-            self.led_state[1] = self.led_state[1] & 0b11111011
+            self._led_state[1] = self._led_state[1] & 0b11111011
         else:
-            self.led_state[1] = self.led_state[1] | 0b00000100
-        await self.send_led_state()
+            self._led_state[1] = self._led_state[1] | 0b00000100
+        await self._send_led_state()
 
     # Update bit flag corresponding to WiFi LED based on parameter
     async def wifi_led(self, newState):
         if newState:
-            self.led_state[1] = self.led_state[1] | 0b00000010
+            self._led_state[1] = self._led_state[1] | 0b00000010
         else:
-            self.led_state[1] = self.led_state[1] & 0b11111101
-        await self.send_led_state()
+            self._led_state[1] = self._led_state[1] & 0b11111101
+        await self._send_led_state()
 
-    # Get K13988 up and running then execute caller task
+    # Get K13988 up and running then execute caller coroutine
     async def run(self, coroutine):
         # Soft reset K13988 with disable + enable
-        self.enable.switch_to_output(False)
+        self._enable.switch_to_output(False)
         await asyncio.sleep(0.25)
-        self.enable.value = True
+        self._enable.value = True
 
         try:
-            receiver_task = asyncio.create_task(self.uart_receiver())
-            await self.initialize()
+            receiver_task = asyncio.create_task(self._uart_receiver())
+            await self._initialize_k13988()
             result = await coroutine
         finally:
             receiver_task.cancel()
@@ -256,7 +261,7 @@ async def test_code(k13988, framebuffer):
 
 async def main():
     k13988 = K13988(board.TX, board.RX, board.D2)
-    framebuffer = K13988FrameBufferWrapper(k13988.framebuffer_bytearray)
+    framebuffer = K13988FrameBufferWrapper(k13988.get_frame_buffer_bytearray())
 
     await k13988.run(test_code(k13988, framebuffer))
 
