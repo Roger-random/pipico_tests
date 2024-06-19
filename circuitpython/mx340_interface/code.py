@@ -103,13 +103,19 @@ class K13988:
     ]
 
     def __init__(self, tx_pin: microcontroller.Pin, rx_pin: microcontroller.Pin, enable_pin: microcontroller.Pin):
+        # Task synchronization
+        self.transmit_lock = asyncio.Lock()
         self.transmit_startup = asyncio.Event()
         self.initialization_complete = asyncio.Event()
-        self.last_report = 0x00
-        self.ack_count = 0
+
+        # Hardware IO
         self.enable = digitalio.DigitalInOut(enable_pin)
         self.uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
-        self.transmit_lock = asyncio.Lock()
+
+        # Internal state
+        self.last_report = 0x00
+        self.ack_count = 0
+        self.led_state = bytearray(b'\x0E\xFD')
 
     # Data receive task
     async def uart_receiver(self):
@@ -187,22 +193,39 @@ class K13988:
 
         await self.uart_sender(framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
 
+    # Transmit LED sate to K13988
+    async def send_led_state(self):
+        async with self.transmit_lock:
+            await self.uart_sender(self.led_state)
+
+    # Update bit flag corresponding to In Use/Memory LED based on parameter
+    async def in_use_led(self, newState):
+        if newState:
+            self.led_state[1] = self.led_state[1] & 0b11111011
+        else:
+            self.led_state[1] = self.led_state[1] | 0b00000100
+        await self.send_led_state()
+
+    # Update bit flag corresponding to WiFi LED based on parameter
+    async def wifi_led(self, newState):
+        if newState:
+            self.led_state[1] = self.led_state[1] | 0b00000010
+        else:
+            self.led_state[1] = self.led_state[1] & 0b11111101
+        await self.send_led_state()
+
     # Blink "In Use/Memory" LED
     async def inuse_blinker(self):
         await self.initialization_complete.wait()
 
         while True:
-            async with self.transmit_lock:
-                await self.uart_sender(b'\x0E\xF9')
+            await self.in_use_led(True)
             await asyncio.sleep(0.1)
-            async with self.transmit_lock:
-                await self.uart_sender(b'\x0E\xFD')
+            await self.in_use_led(False)
             await asyncio.sleep(0.1)
-            async with self.transmit_lock:
-                await self.uart_sender(b'\x0E\xF9')
+            await self.in_use_led(True)
             await asyncio.sleep(0.1)
-            async with self.transmit_lock:
-                await self.uart_sender(b'\x0E\xFD')
+            await self.in_use_led(False)
             await asyncio.sleep(1)
 
     async def run(self):
