@@ -57,7 +57,7 @@ class MVMSBFormat:
             height -= 1
 
 # FrameBuffer class for drawing on the byte array
-class K13988FrameBufferWrapper(adafruit_framebuf.FrameBuffer):
+class K13988_FrameBuffer(adafruit_framebuf.FrameBuffer):
     def __init__(self, buffer_bytearray):
         super().__init__(buffer_bytearray, 196, 34)
 
@@ -219,6 +219,8 @@ class K13988:
         await self._send_led_state()
 
     # Get K13988 up and running then execute caller coroutine
+    # This seems like a great candidate to implement as a context manager
+    # but CircuitPython seems to lack contextlib for @contextmanager
     async def run(self, coroutine):
         # Soft reset K13988 with disable + enable
         self._enable.switch_to_output(False)
@@ -261,7 +263,7 @@ async def test_code(k13988, framebuffer):
 
 async def main():
     k13988 = K13988(board.TX, board.RX, board.D2)
-    framebuffer = K13988FrameBufferWrapper(k13988.get_frame_buffer_bytearray())
+    framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
 
     await k13988.run(test_code(k13988, framebuffer))
 
