@@ -56,18 +56,13 @@ class MVMSBFormat:
             y += 1
             height -= 1
 
-# Raw frame buffer byte array
-framebuffer_bytearray = bytearray(196*5)
-
 # FrameBuffer class for drawing on the byte array
-class K13988Display(adafruit_framebuf.FrameBuffer):
+class K13988FrameBufferWrapper(adafruit_framebuf.FrameBuffer):
     def __init__(self, buffer_bytearray):
         super().__init__(buffer_bytearray, 196, 34)
 
         # Change format over to our custom format.
         self.format = MVMSBFormat()
-
-framebuffer = K13988Display(framebuffer_bytearray)
 
 class K13988:
     # Frame buffer is made of 5 stripes. During data transmission each stripe is
@@ -111,6 +106,9 @@ class K13988:
         # Hardware IO
         self.enable = digitalio.DigitalInOut(enable_pin)
         self.uart = busio.UART(tx_pin, rx_pin, baudrate=250000, bits=8, parity=busio.UART.Parity.EVEN, stop=2, timeout=20)
+
+        # Raw frame buffer byte array
+        self.framebuffer_bytearray = bytearray(196*5)
 
         # Internal state
         self.last_report = 0x00
@@ -177,7 +175,8 @@ class K13988:
         # Set initialization complete event
         self.initialization_complete.set()
 
-    async def send_lcd_frame(self):
+    # Following precedence of RGBMatrix, method to send frame buffer to screen
+    async def refresh(self):
         async with self.transmit_lock:
             for stripe in range(5):
                 await self.send_lcd_stripe(stripe)
@@ -191,7 +190,7 @@ class K13988:
         await self.uart_sender(b'\x04\x30')
         await self.uart_sender(b'\x06\xC4')
 
-        await self.uart_sender(framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
+        await self.uart_sender(self.framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
 
     # Transmit LED sate to K13988
     async def send_led_state(self):
@@ -214,21 +213,8 @@ class K13988:
             self.led_state[1] = self.led_state[1] & 0b11111101
         await self.send_led_state()
 
-    # Blink "In Use/Memory" LED
-    async def inuse_blinker(self):
-        await self.initialization_complete.wait()
-
-        while True:
-            await self.in_use_led(True)
-            await asyncio.sleep(0.1)
-            await self.in_use_led(False)
-            await asyncio.sleep(0.1)
-            await self.in_use_led(True)
-            await asyncio.sleep(0.1)
-            await self.in_use_led(False)
-            await asyncio.sleep(1)
-
-    async def run(self):
+    # Get K13988 up and running then execute caller task
+    async def run(self, coroutine):
         # Soft reset K13988 with disable + enable
         self.enable.switch_to_output(False)
         await asyncio.sleep(0.25)
@@ -237,23 +223,41 @@ class K13988:
         try:
             receiver_task = asyncio.create_task(self.uart_receiver())
             await self.initialize()
-            blink_task = asyncio.create_task(self.inuse_blinker())
-
-            positions = [(50,4),(100,4),(100,16),(50,16)]
-
-            while True:
-                for pos in positions:
-                    framebuffer.fill(1)
-                    framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
-                    await self.send_lcd_frame()
-                    await asyncio.sleep(0.2)
-
+            result = await coroutine
         finally:
-            blink_task.cancel()
             receiver_task.cancel()
+
+        return result
+
+# Blink "In Use/Memory" LED
+async def inuse_blinker(k13988):
+    while True:
+        await k13988.in_use_led(True)
+        await asyncio.sleep(0.1)
+        await k13988.in_use_led(False)
+        await asyncio.sleep(0.1)
+        await k13988.in_use_led(True)
+        await asyncio.sleep(0.1)
+        await k13988.in_use_led(False)
+        await asyncio.sleep(1)
+
+async def bouncy_text(k13988, framebuffer):
+    positions = [(50,4),(100,4),(100,16),(50,16)]
+
+    while True:
+        for pos in positions:
+            framebuffer.fill(1)
+            framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
+            await k13988.refresh()
+            await asyncio.sleep(0.2)
+
+async def test_code(k13988, framebuffer):
+    return await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988, framebuffer))
 
 async def main():
     k13988 = K13988(board.TX, board.RX, board.D2)
-    await k13988.run()
+    framebuffer = K13988FrameBufferWrapper(k13988.framebuffer_bytearray)
+
+    await k13988.run(test_code(k13988, framebuffer))
 
 asyncio.run(main())
