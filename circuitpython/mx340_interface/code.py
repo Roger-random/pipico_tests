@@ -14,6 +14,77 @@ from keypad import Event
 # are discarded when the queue is full.
 key_event_queue_length = 64
 
+# Constants for all key scan codes.
+# https://newscrewdriver.com/2024/01/14/canon-pixma-mx340-control-panel-button-press-report-values/
+# Code format follows Adafruit HID Key codes:
+# https://github.com/adafruit/Adafruit_CircuitPython_HID/blob/main/adafruit_hid/keycode.py
+class Keycode:
+    NONE        = 0X80 # When no keys are pressed
+    COPY        = 0XA9
+    FAX         = 0XAB
+    SCAN        = 0XAC
+
+    MENU        = 0X94
+    SETTINGS    = 0X92
+    FAX_QUALITY = 0X91
+
+    BACK        = 0X93
+    LEFT        = 0XCB
+    RIGHT       = 0XCA
+    OK          = 0XC9
+
+    ONE         = 0X8A
+    TWO         = 0X9A
+    THREE       = 0XA2
+    FOUR        = 0X8C
+    FIVE        = 0X9C
+    SIX         = 0XA4
+    SEVEN       = 0X89
+    EIGHT       = 0X99
+    NINE        = 0XA1
+    ASTERISK    = 0X8B
+    ZERO        = 0X9B
+    POUND       = 0XA3
+
+    REDIAL      = 0XB2
+    CODED_DIAL  = 0XB4
+    HOOK        = 0XCC
+
+    BLACK       = 0XB1
+    COLOR       = 0XB3
+
+# Human-readable name strings corresponding to scan code values in Keycode class
+keycode_string = dict({
+    Keycode.NONE:       "(None)",
+    Keycode.COPY:       "Copy",
+    Keycode.FAX:        "Fax",
+    Keycode.SCAN:       "Scan",
+    Keycode.MENU:       "Menu",
+    Keycode.SETTINGS:   "Settings",
+    Keycode.FAX_QUALITY:"Fax Quality",
+    Keycode.BACK:       "Back",
+    Keycode.LEFT:       "Left (-)",
+    Keycode.RIGHT:      "Right (+)",
+    Keycode.OK:         "OK",
+    Keycode.ONE:        "1",
+    Keycode.TWO:        "2",
+    Keycode.THREE:      "3",
+    Keycode.FOUR:       "4",
+    Keycode.FIVE:       "5",
+    Keycode.SIX:        "6",
+    Keycode.SEVEN:      "7",
+    Keycode.EIGHT:      "8",
+    Keycode.NINE:       "9",
+    Keycode.ASTERISK:   "*",
+    Keycode.ZERO:       "0",
+    Keycode.POUND:      "#",
+    Keycode.REDIAL:     "Redial/Pause",
+    Keycode.CODED_DIAL: "Coded Dial",
+    Keycode.HOOK:       "Hook",
+    Keycode.BLACK:      "Black",
+    Keycode.COLOR:      "Color"
+})
+
 # Copied MVLSBFormat from
 # https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
 # Then modified from least-significant bit nearest top of screen to most-significant-bit up top
@@ -89,7 +160,7 @@ class K13988:
         self._framebuffer_bytearray = bytearray(196*5)
 
         # Internal state
-        self._last_report = 0x80
+        self._last_report = Keycode.NONE
         self._ack_count = 0
         self._led_state = bytearray(b'\x0E\xFD')
         self._key_event_queue = deque((), key_event_queue_length, True)
@@ -116,9 +187,9 @@ class K13988:
             elif data != self._last_report:
                 if (len(self._key_event_queue) < key_event_queue_length):
                     # Add event to queue reflecting change in key scan state
-                    if self._last_report != 0x80:
+                    if self._last_report != Keycode.NONE:
                         self._key_event_queue.append(Event(self._last_report, False)) # Previous key released
-                    if data != 0x80:
+                    if data != Keycode.NONE:
                         self._key_event_queue.append(Event(data, True)) # New key pressed
                 else:
                     # No events are added if queue is full
@@ -209,7 +280,7 @@ class K13988:
         await self._uart_sender(self._stripe_id_lookup[stripe_num])
         await self._uart_sender(b'\x04\xC8')
         await self._uart_sender(b'\x04\x30')
-        await self._uart_sender(b'\x06\xC4')
+        await self._uart_sender(b'\x06\xC4') # Incoming bulk transmission of 196 (0xC4) bytes
 
         await self._uart_sender(self._framebuffer_bytearray[stripe_slice_start:stripe_slice_end])
 
@@ -295,10 +366,10 @@ async def printkeys(k13988):
         key = k13988.get_key_event()
         if key:
             if key.pressed:
-                action = 'pressed'
+                action = 'down'
             else:
-                action = '        released'
-            print("{2:8X} Key 0x{0:X} {1}".format(key.key_number, action, key.timestamp))
+                action = '     up'
+            print("{0} {1}".format(keycode_string[key.key_number], action))
         await asyncio.sleep(0)
 
 async def main():
