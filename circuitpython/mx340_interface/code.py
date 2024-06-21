@@ -10,6 +10,9 @@ import adafruit_framebuf
 from collections import deque
 from keypad import Event
 
+# Maximum number of UART transmission retries, raises RuntimeError when exceeded
+uart_tx_retry_limit = 16
+
 # Maximum length of keyboard event queue. Any additional events
 # are discarded when the queue is full.
 key_event_queue_length = 64
@@ -209,6 +212,7 @@ class K13988:
         assert bytes is not None
         assert len(bytes) == 2 or len(bytes) == 196
 
+        retry_count = 0
         success = False
 
         while not success:
@@ -220,7 +224,11 @@ class K13988:
                 self._ack_count -= 1
                 success = True
             except asyncio.TimeoutError:
-                print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
+                if retry_count < uart_tx_retry_limit:
+                    print("Retrying 0x{0:X} 0x{1:X}".format(bytes[0],bytes[1]))
+                    retry_count += 1
+                else:
+                    raise RuntimeError("No communication with K13988")
 
     # Initialization sequence for NEC K13988 chip
     # Values came from logic analyzer watching behavior of a running MX340
@@ -374,7 +382,7 @@ async def printkeys(k13988):
 
 async def main():
     print("Starting main()")
-    async with K13988(board.TX, board.RX, board.D2) as k13988:
+    async with K13988(board.GP0, board.GP1, board.GP2) as k13988:
         await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988), printkeys(k13988))
 
 asyncio.run(main())
