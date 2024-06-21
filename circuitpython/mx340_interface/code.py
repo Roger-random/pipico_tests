@@ -3,7 +3,16 @@ import asyncio
 import digitalio
 import busio
 
+# Parent class of optional LCD screen FrameBuffer wrapper
 import adafruit_framebuf
+
+# Support keyboard event queue
+from collections import deque
+from keypad import Event
+
+# Maximum length of keyboard event queue. Any additional events
+# are discarded when the queue is full.
+key_event_queue_length = 64
 
 # Copied MVLSBFormat from
 # https://github.com/adafruit/Adafruit_CircuitPython_framebuf/blob/main/adafruit_framebuf.py
@@ -80,9 +89,10 @@ class K13988:
         self._framebuffer_bytearray = bytearray(196*5)
 
         # Internal state
-        self._last_report = 0x00
+        self._last_report = 0x80
         self._ack_count = 0
         self._led_state = bytearray(b'\x0E\xFD')
+        self._key_event_queue = deque((), key_event_queue_length, True)
 
     # Get reference to raw frame buffer bytearray
     def get_frame_buffer_bytearray(self):
@@ -104,8 +114,16 @@ class K13988:
                 # Ignore 0x40 as I have no idea what it means
                 pass
             elif data != self._last_report:
+                if (len(self._key_event_queue) < key_event_queue_length):
+                    # Add event to queue reflecting change in key scan state
+                    if self._last_report != 0x80:
+                        self._key_event_queue.append(Event(self._last_report, False)) # Previous key released
+                    if data != 0x80:
+                        self._key_event_queue.append(Event(data, True)) # New key pressed
+                else:
+                    # No events are added if queue is full
+                    pass
                 self._last_report = data
-                print(f"New report 0x{data:X}")
             else:
                 # Key matrix scan report unchanged, take no action
                 pass
@@ -163,8 +181,6 @@ class K13988:
 
     # Initialize K13988
     async def _initialize_k13988(self):
-        print("Starting K13988 initialization")
-
         # Wait for first byte from K13988 before transmitting initialization
         await self._transmit_startup.wait()
 
@@ -172,7 +188,6 @@ class K13988:
             for init_command in self._k13988_init:
                 await self._uart_sender(init_command)
 
-        print("Initialization sequence complete")
         # Set initialization complete event
         self._initialization_complete.set()
 
@@ -219,6 +234,13 @@ class K13988:
             self._led_state[1] = self._led_state[1] & 0b11111101
         await self._send_led_state()
 
+    # Get a key event. (If no event, returns None)
+    def get_key_event(self):
+        if len(self._key_event_queue) == 0:
+            return None
+        else:
+            return self._key_event_queue.popleft()
+
     # Asynchronous context manager entry to set up K13988 communications
     async def __aenter__(self):
         # Soft reset K13988 with disable + enable
@@ -242,6 +264,7 @@ class K13988:
 
 # Blink "In Use/Memory" LED
 async def inuse_blinker(k13988):
+    print("Starting inuse_blinker()")
     while True:
         await k13988.in_use_led(True)
         await asyncio.sleep(0.1)
@@ -254,6 +277,7 @@ async def inuse_blinker(k13988):
 
 # Test FrameBuffer support by drawing text in various locations
 async def bouncy_text(k13988):
+    print("Starting bouncy_text()")
     positions = [(50,4),(100,4),(100,16),(50,16)]
     framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
 
@@ -264,8 +288,22 @@ async def bouncy_text(k13988):
             await k13988.refresh()
             await asyncio.sleep(0.2)
 
+# Print key events to serial console
+async def printkeys(k13988):
+    print("Starting printkeys()")
+    while True:
+        key = k13988.get_key_event()
+        if key:
+            if key.pressed:
+                action = 'pressed'
+            else:
+                action = '        released'
+            print("{2:8X} Key 0x{0:X} {1}".format(key.key_number, action, key.timestamp))
+        await asyncio.sleep(0)
+
 async def main():
+    print("Starting main()")
     async with K13988(board.TX, board.RX, board.D2) as k13988:
-        await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988))
+        await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988), printkeys(k13988))
 
 asyncio.run(main())
