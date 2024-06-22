@@ -354,6 +354,15 @@ async def inuse_blinker(k13988):
         await k13988.in_use_led(False)
         await asyncio.sleep(1)
 
+# Blink "WiFi" LED
+async def wifi_blinker(k13988):
+    print("Starting wifi_blinker()")
+    while True:
+        await k13988.wifi_led(True)
+        await asyncio.sleep(0.5)
+        await k13988.wifi_led(False)
+        await asyncio.sleep(0.5)
+
 # Test FrameBuffer support by drawing text in various locations
 async def bouncy_text(k13988):
     print("Starting bouncy_text()")
@@ -383,6 +392,6 @@ async def printkeys(k13988):
 async def main():
     print("Starting main()")
     async with K13988(board.GP0, board.GP1, board.GP2) as k13988:
-        await asyncio.gather(inuse_blinker(k13988), bouncy_text(k13988), printkeys(k13988))
+        await asyncio.gather(inuse_blinker(k13988), wifi_blinker(k13988), bouncy_text(k13988), printkeys(k13988))
 
 asyncio.run(main())
