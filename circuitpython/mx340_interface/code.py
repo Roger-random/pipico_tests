@@ -366,30 +366,36 @@ async def wifi_blinker(k13988):
         await k13988.wifi_led(False)
         await asyncio.sleep(0.5)
 
-# Test FrameBuffer support by drawing text in various locations
-async def bouncy_text(k13988):
-    print("Starting bouncy_text()")
-    positions = [(50,4),(100,4),(100,16),(50,16)]
-    framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
+# Test FrameBuffer support by writing name of pressed key
+async def write_keycode_string(k13988, framebuffer, key_number):
+    text_size = 2
+    if key_number in keycode_string:
+        key_name = keycode_string[key_number]
+    else:
+        # Every once in a while this happens and I haven't figured out why yet
+        key_name = "0x{0:X}".format(key_number)
+        print("Unexpected key number {0}".format(key_name))
+    text_x = round((196-(len(key_name)*(6*text_size)))/2)
+    text_y = round((34 - (9*text_size))/2)
 
-    while True:
-        for pos in positions:
-            framebuffer.fill(1)
-            framebuffer.text("Bouncy",pos[0],pos[1],0,font_name="lib/font5x8.bin")
-            await k13988.refresh()
-            await asyncio.sleep(0.2)
+    framebuffer.fill(0)
+    framebuffer.text(key_name, text_x, text_y, 1, font_name="lib/font5x8.bin", size=text_size)
+    await k13988.refresh()
 
 # Print key events to serial console
 async def printkeys(k13988):
     print("Starting printkeys()")
+
+    framebuffer = K13988_FrameBuffer(k13988.get_frame_buffer_bytearray())
+    await write_keycode_string(k13988, framebuffer, Keycode.NONE)
+
     while True:
         key = k13988.get_key_event()
         if key:
             if key.pressed:
-                action = 'down'
+                await write_keycode_string(k13988, framebuffer, key.key_number)
             else:
-                action = '     up'
-            print("{0} {1}".format(keycode_string[key.key_number], action))
+                await write_keycode_string(k13988, framebuffer, Keycode.NONE)
         await asyncio.sleep(0)
 
 # Verify functionality of direct-wired components:
@@ -421,7 +427,6 @@ async def main():
         await asyncio.gather(
             inuse_blinker(k13988),
             wifi_blinker(k13988),
-            bouncy_text(k13988),
             direct_wired(k13988),
             printkeys(k13988))
 
