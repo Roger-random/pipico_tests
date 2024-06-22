@@ -10,6 +10,9 @@ import adafruit_framebuf
 from collections import deque
 from keypad import Event
 
+# Direct-wired buttons
+from keypad import Keys
+
 # Maximum number of UART transmission retries, raises RuntimeError when exceeded
 uart_tx_retry_limit = 16
 
@@ -389,9 +392,37 @@ async def printkeys(k13988):
             print("{0} {1}".format(keycode_string[key.key_number], action))
         await asyncio.sleep(0)
 
+# Verify functionality of direct-wired components:
+# * Buttons: "On" and "Stop"
+# * LEDs: "On" and "Alarm"
+async def direct_wired(k13988):
+    alarm_led = digitalio.DigitalInOut(board.GP3)
+    alarm_led.switch_to_output(False)
+
+    power_led = digitalio.DigitalInOut(board.GP4)
+    power_led.switch_to_output(False)
+
+    keys = Keys((board.GP5, board.GP6), value_when_pressed=False, pull=True)
+
+    while True:
+        event = keys.events.get()
+        if event and event.pressed:
+            if event.key_number == 0:
+                power_led.value = not power_led.value
+            elif event.key_number == 1:
+                alarm_led.value = not alarm_led.value
+            else:
+                print("Unexpected key number {0} received".format(event.key_number))
+        await asyncio.sleep(0)
+
 async def main():
     print("Starting main()")
     async with K13988(board.GP0, board.GP1, board.GP2) as k13988:
-        await asyncio.gather(inuse_blinker(k13988), wifi_blinker(k13988), bouncy_text(k13988), printkeys(k13988))
+        await asyncio.gather(
+            inuse_blinker(k13988),
+            wifi_blinker(k13988),
+            bouncy_text(k13988),
+            direct_wired(k13988),
+            printkeys(k13988))
 
 asyncio.run(main())
