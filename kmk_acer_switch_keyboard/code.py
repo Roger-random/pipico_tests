@@ -29,7 +29,8 @@ keyboard.keymap = [
      KC.NO,     KC.LCTRL,   KC.NO,      KC.N0,      KC.NO,      KC.NO,      KC.NO,      KC.NO,      # 21
      KC.LWIN,   KC.NO,      KC.NO,      KC.P,       KC.NO,      KC.NO,      KC.NO,      KC.NO,      # 22
      KC.NO,     KC.NO,      KC.NO,      KC.SCOLON,  KC.RALT,    KC.NO,      KC.LALT,    KC.NO,      # 23
-     KC.GRAVE,  KC.NO,      KC.TAB,     KC.CAPSLOCK,KC.NO,      KC.NO,      KC.NO,      KC.NO,      # 24 "Properties"(?) and "Fn" left unassigned as KC.NO
+     KC.GRAVE,  KC.NO,      KC.TAB,     KC.CAPSLOCK,KC.WINMENU, KC.NO,      KC.NO,      KC.NO,      # 24
+     #                                       Special handling required for 19+24 = "Fn" ^^^^^
      ]
 ]
 
