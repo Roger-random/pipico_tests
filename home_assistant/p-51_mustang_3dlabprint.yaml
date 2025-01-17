@@ -1,0 +1,205 @@
+
+output:
+  # Stepper motor driver Active-LOW enable pin
+  - platform: gpio
+    id: stepper_enable
+    pin: GPIO6
+    inverted: True
+  # List of eight PWM signal generators for 'servo' component below
+  - platform: rp2040_pwm
+    id: pwm_8
+    pin: GPIO8
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_9
+    pin: GPIO9
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_10
+    pin: GPIO10
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_11
+    pin: GPIO11
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_12
+    pin: GPIO12
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_13
+    pin: GPIO13
+    frequency: 50hz
+  # 14 and 15 are wired up on the board but unused
+  - platform: rp2040_pwm
+    id: pwm_14
+    pin: GPIO14
+    frequency: 50hz
+  - platform: rp2040_pwm
+    id: pwm_15
+    pin: GPIO15
+    frequency: 50hz
+
+# A single MOSFET controls power to all servos
+switch:
+  - platform: gpio
+    pin: GPIO7
+    name: "Servo Power"
+    on_turn_on:
+      then:
+        - number.set:
+            id: aileron
+            value: 0
+        - number.set:
+            id: flap
+            value: 0
+        - number.set:
+            id: rudder
+            value: 0
+        - number.set:
+            id: elevator
+            value: 0
+
+# Servo components built on PWM declared earlier
+servo:
+  - id: servo_8
+    output: pwm_8
+  - id: servo_9
+    output: pwm_9
+  - id: servo_10
+    output: pwm_10
+  - id: servo_11
+    output: pwm_11
+  - id: servo_12
+    output: pwm_12
+  - id: servo_13
+    output: pwm_13
+  # 14 and 15 are wired up on the board but currently unused
+  - id: servo_14
+    output: pwm_14
+  - id: servo_15
+    output: pwm_15
+
+# Stepper motor driver controlled via "Step" and "Direction" pins.
+# There appears to be no way in ESPHome to reverse direction. It is possible
+# to wire up motor and controller board so the 4-pin plug can be flipped
+# around for spinning in reverse.
+stepper:
+  - platform: a4988
+    id: propeller_stepper
+    step_pin: GPIO5
+    dir_pin: GPIO4
+    max_speed: 1000 steps/s
+    acceleration: 250
+    deceleration: 250
+
+# Stepper component is designed for position control. In order to implement
+# continuous motion, this periodically resets the stepper position so the
+# target destination position is never reached.
+interval:
+  - interval: 1min
+    then:
+      - stepper.report_position:
+          id: propeller_stepper
+          position: 0
+
+number:
+  # Propeller stepper motor control lambda. Zero stops the motor and disables
+  # the stepper motor controller, otherwise spin at a set speed.
+  - platform: template
+    name: "Propeller"
+    min_value: 0
+    max_value: 1000
+    step: 100
+    set_action:
+      then:
+        - if:
+            condition:
+              lambda: 'return x > 0;'
+            then:
+              - output.turn_on: stepper_enable
+              - stepper.set_target:
+                  id: propeller_stepper
+                  target: 100000 # Will never be reached due to 'interval' above
+              - stepper.set_speed:
+                  id: propeller_stepper
+                  speed: !lambda 'return x;'
+            else:
+              - output.turn_off: stepper_enable
+              - stepper.set_speed:
+                  id: propeller_stepper
+                  speed: 100
+  # Rudder control is simplest, I even managed to get the center at servo zero
+  - platform: template
+    id: rudder
+    name: "Rudder"
+    min_value: -70
+    initial_value: 0
+    max_value: 70
+    step: 7
+    set_action:
+      then:
+        - servo.write:
+            id: servo_12
+            level: !lambda 'return x/100.0;'
+  # Elevator control should have meant coordinating between two servos, but one
+  # port was blocked so I had only a single actuator to worry about.
+  - platform: template
+    id: elevator
+    name: "Elevator"
+    min_value: -30
+    initial_value: 0
+    max_value: 30
+    step: 3
+    set_action:
+      then:
+        - servo.write:
+            id: servo_13
+            level: !lambda 'return (5+x)/100.0;'
+  # Flaps are only defined at a few discrete points, following precendene of
+  # "Half flaps", "Full flaps", etc.
+  - platform: template
+    id: flap
+    name: "Flap"
+    min_value: 0
+    initial_value: 0
+    max_value: 4
+    step: 1
+    set_action:
+      then:
+        - servo.write:
+            id: servo_10
+            level: !lambda 'return (42+(x*(-16)))/100.0;' # centerpoint - (x * distance_per_step)
+        - servo.write:
+            id: servo_11
+            level: !lambda 'return ((-67)+(x*10))/100.0;' # centerpoint - (x * distance_per_step)
+  # Ailerons require equal and opposite motion from each of the two servos, which
+  # is actually the same direction numerically because they're mechanically mounted
+  # mirror image of each other. Also, due to mechanical mounting angles, they move
+  # different distance per step above and below the centerpoint.
+  - platform: template
+    id: aileron
+    name: "Aileron"
+    min_value: -100
+    initial_value: 0
+    max_value: 100
+    step: 10
+    set_action:
+      then:
+        - if:
+            condition:
+              lambda: 'return x >= 0;'
+            then:
+              - servo.write:
+                  id: servo_8
+                  level: !lambda 'return (8+(x*0.53))/100.0;'
+              - servo.write:
+                  id: servo_9
+                  level: !lambda 'return ((-17)+(x*0.74))/100.0;'
+            else:
+              - servo.write:
+                  id: servo_8
+                  level: !lambda 'return (8+(x*0.35))/100.0;'
+              - servo.write:
+                  id: servo_9
+                  level: !lambda 'return ((-17)+(x*0.63))/100.0;'
